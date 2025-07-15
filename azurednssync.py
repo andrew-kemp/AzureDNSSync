@@ -22,22 +22,22 @@ SMTP_KEY_FILE = os.path.join(SCRIPT_DIR, "smtp_auth.key")
 IP_DETECT_URL = "https://api.ipify.org"
 
 DEFAULTS = {
-    "tenant_id": "11016236-4dbc-43a6-8310-be803173fc43",
-    "client_id": "dec547d4-3184-4f51-8e02-de3ed6f4ba3e",
+    "tenant_id": "00000000-0000-0000-0000-000000000000",  # Example GUID
+    "client_id": "11111111-2222-3333-4444-555555555555",  # Example GUID
     "certificate_path": "/etc/ssl/private/dnssync-combined.pem",
-    "resource_group": "DNS_Zones",
-    "zone_name": "andykemp.cloud",
-    "record_set_name": "ip",
+    "resource_group": "EXAMPLE_RESOURCE_GROUP",
+    "zone_name": "example.com",
+    "record_set_name": "dynamic",
     "ttl": 300,
-    "email_from": "AzureDNSSync@andykemp.cloud",
-    "email_to": "andrew@kemponline.co.uk",
-    "smtp_server": "smtp.sendgrid.net",
+    "email_from": "dns-sync@example.com",
+    "email_to": "admin@example.com",
+    "smtp_server": "smtp.example.com",
     "smtp_port": 587,
     "smtp_username": "apikey",
-    "smtp_password": "SG.8bVnR0eNTimh4pmS-8w18A.pl75l3ReMmM5K1IEpaN3Pl0QelggFtfr735",
+    "smtp_password": "SG.xxxxxxxx.yyyyyyyyzzzzzzzz",  # Example API key
     "schedule_minutes": 5,
     "scheduled": True,
-    "subscription_id": "13869b4a-7bd0-4f35-a796-3ea82f39c884",
+    "subscription_id": "abcdef12-3456-7890-abcd-ef1234567890", # Example GUID
     "certificate_password": ""
 }
 
