@@ -47,31 +47,32 @@ A secure dynamic DNS updater for Azure DNS using a Service Principal and certifi
 
 ---
 
-## 2. Install on your Server
+## 2. Quick Install
 
-Clone or download this repo, or just download the two files:
-
-- `install.sh`
-- `azurednssync.py`
-
-### Run the installer
+You can install and set up AzureDNSSync in one step using this command:
 
 ```bash
-chmod +x install.sh
-sudo ./install.sh
+sudo bash -c "curl -fsSL https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/install.sh | bash"
 ```
 
-- This script:
-  - Installs dependencies in a Python virtual environment (no system pollution)
-  - Downloads the latest `azurednssync.py`
-  - Generates a private key and certificate in `/etc/ssl/private/`
-  - Combines key and cert into a PEM for use by Azure SDK
-  - Shows you the certificate block to copy into Azure App Registration
-  - Optionally runs the initial configuration wizard
+- This downloads and runs the latest installer.  
+- You do **not** need to clone the repo or download any files manually!
+- The script downloads `azurednssync.py` automatically.
 
 ---
 
-## 3. Configure the Updater
+## 3. What the Installer Does
+
+- Installs dependencies in a Python virtual environment (no system pollution)
+- Downloads the latest `azurednssync.py`
+- Generates a private key and certificate in `/etc/ssl/private/`
+- Combines key and cert into a PEM for use by Azure SDK
+- Shows you the certificate block to copy into Azure App Registration
+- Optionally runs the initial configuration wizard
+
+---
+
+## 4. Configure the Updater
 
 If you didn't run the wizard at the end of install, run:
 
@@ -84,7 +85,7 @@ sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py
 
 ---
 
-## 4. AzureDNSSync Operation
+## 5. AzureDNSSync Operation
 
 - The updater runs via cron as configured (default: every 5 minutes).
 - It checks your public IP, updates the Azure DNS A record if it changes, and sends an email notification if configured.
@@ -106,7 +107,7 @@ sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py
 - Check logs in `/etc/azurednssync/update.log`
 - To re-run configuration:  
   `sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py`
-- To re-install: re-run `sudo ./install.sh`
+- To re-install: re-run the quick install command above.
 
 ---
 
