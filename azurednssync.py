@@ -95,8 +95,16 @@ def prompt_config(defaults):
 
     # SCHEDULER SECTION
     print("\nScheduling Configuration:")
-    schedule_minutes = input(f"How often should the updater run (in minutes)? [{defaults['schedule_minutes']}]: ").strip() or str(defaults['schedule_minutes'])
-    config['schedule_minutes'] = int(schedule_minutes)
+    while True:
+        schedule_minutes = input(f"How often should the updater run (in minutes)? [{defaults['schedule_minutes']}]: ").strip()
+        if not schedule_minutes or schedule_minutes.lower() in ("y", "yes"):
+            config['schedule_minutes'] = defaults['schedule_minutes']
+            break
+        try:
+            config['schedule_minutes'] = int(schedule_minutes)
+            break
+        except ValueError:
+            print("Please enter a number (in minutes), or press Enter to accept the default.")
     config['scheduled'] = True
 
     config["subscription_id"] = defaults["subscription_id"]
