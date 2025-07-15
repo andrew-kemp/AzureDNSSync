@@ -8,12 +8,11 @@ INSTALL_DIR="/etc/azurednssync"
 CERT_DIR="/etc/ssl/private"
 CERT_NAME="dnssync"
 COMBINED_PEM="$CERT_DIR/dnssync-combined.pem"
+CRT_FILE="$CERT_DIR/${CERT_NAME}.crt"
 PYTHON_DEPS="python3 python3-venv"
 PIP_DEPS="azure-identity azure-mgmt-dns pyyaml requests"
 VENV_DIR="$INSTALL_DIR/venv"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/refs/heads/main/azurednssync.py"
-
-# === Functions ===
 
 command_exists() {
     command -v "$1" &>/dev/null
@@ -63,7 +62,6 @@ if [ ! -d "$VENV_DIR" ]; then
     sudo python3 -m venv "$VENV_DIR"
 fi
 
-# Upgrade pip and install Python dependencies in venv
 sudo "$VENV_DIR/bin/pip" install --upgrade pip
 sudo "$VENV_DIR/bin/pip" install $PIP_DEPS
 
@@ -94,27 +92,34 @@ fi
 # --- 6. Create combined PEM file ---
 
 echo_title "Combining key and cert into PEM"
-
 sudo sh -c "cat ${CERT_NAME}.key ${CERT_NAME}.crt > $COMBINED_PEM"
 sudo chmod 600 "$COMBINED_PEM"
 
-# --- 7. Print App Registration (Azure) details ---
+# --- 7. Display public certificate block for Azure ---
 
-echo_title "App Registration File (for Azure)"
+echo_title "Azure App Registration Certificate Block"
+echo "Copy the block below and paste it into your Azure AD App Registration as a public certificate:"
+echo
+echo "-----BEGIN CERTIFICATE-----"
+sudo awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print}' "$CRT_FILE"
+echo "-----END CERTIFICATE-----"
+echo
 
-echo "You will need to upload the following PEM file to your Azure AD App Registration:"
-echo "    $COMBINED_PEM"
-echo
-echo "The file contains:"
-echo "----------------------------------"
-sudo cat "$COMBINED_PEM"
-echo "----------------------------------"
-echo
-echo "When registering the certificate in Azure, use the public certificate portion (-----BEGIN CERTIFICATE----- ...)."
-echo "Keep the combined PEM file secure and private."
-echo
-echo "Next steps:"
-echo "  1. Run: sudo $VENV_DIR/bin/python $INSTALL_DIR/$SCRIPT_NAME"
-echo "     -- and follow the prompts to complete configuration."
-echo "  2. Upload the certificate to your Azure AD App Registration."
-echo "  3. Enjoy automatic DNS sync!"
+# --- 8. Prompt to run configuration ---
+
+while true; do
+    read -p "Would you like to run the AzureDNSSync configuration now? (y/n): " yn
+    case $yn in
+        [Yy]* )
+            echo "Starting AzureDNSSync configuration..."
+            sudo "$VENV_DIR/bin/python" "$INSTALL_DIR/$SCRIPT_NAME"
+            break
+            ;;
+        [Nn]* )
+            echo "You can configure later by running:"
+            echo "  sudo $VENV_DIR/bin/python $INSTALL_DIR/$SCRIPT_NAME"
+            break
+            ;;
+        * ) echo "Please answer y or n.";;
+    esac
+done
