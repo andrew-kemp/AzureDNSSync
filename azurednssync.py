@@ -77,6 +77,7 @@ def prompt_config(defaults):
     print("\nAzure Configuration:")
     config['tenant_id'] = input(f"Tenant ID [{defaults['tenant_id']}]: ").strip() or defaults['tenant_id']
     config['client_id'] = input(f"Client ID [{defaults['client_id']}]: ").strip() or defaults['client_id']
+    config['subscription_id'] = input(f"Subscription ID [{defaults['subscription_id']}]: ").strip() or defaults['subscription_id']
     config['certificate_path'] = input(f"Certificate Path [{defaults['certificate_path']}]: ").strip() or defaults['certificate_path']
     config['resource_group'] = input(f"Resource Group [{defaults['resource_group']}]: ").strip() or defaults['resource_group']
     config['zone_name'] = input(f"Zone Name [{defaults['zone_name']}]: ").strip() or defaults['zone_name']
@@ -107,7 +108,6 @@ def prompt_config(defaults):
             print("Please enter a number (in minutes), or press Enter to accept the default.")
     config['scheduled'] = True
 
-    config["subscription_id"] = defaults["subscription_id"]
     config["certificate_password"] = defaults["certificate_password"]
     return config
 
