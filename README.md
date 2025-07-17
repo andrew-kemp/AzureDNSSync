@@ -34,7 +34,9 @@ It runs quietly in the background on your Ubuntu server, automatically keeping y
 Just run the installer script below and follow the prompts:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/install.sh -o install.sh
+chmod +x install.sh
+sudo ./install.sh
 ```
 
 - The script will:
