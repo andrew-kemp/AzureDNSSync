@@ -2,19 +2,14 @@
 AzureDNSSync - Dynamic DNS Updater for Azure DNS
 
 Author: Andrew Kemp <andrew@kemponline.co.uk>
-Version: 1.2.0
+Version: 1.3.0
 First Created: 2024-06-01
 Last Updated: 2025-07-17
 
 Synopsis:
     This script checks your public IP address and updates an Azure DNS A record if it has changed.
-    It supports automatic scheduling via cron and can send notification emails on updates.
-
-Install:
-    # Download and run the installer
-    curl -fsSL https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/install.sh -o install.sh
-    chmod +x install.sh
-    sudo ./install.sh
+    Designed to be run via systemd timer or manually; no internal scheduling logic.
+    Configuration is read from config.yaml and smtp_auth.key, created by install.sh.
 
 Manual Run:
     sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py
@@ -35,7 +30,7 @@ Config/Secrets:
 License: MIT
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 import os
 import sys
@@ -63,21 +58,19 @@ SMTP_KEY_FILE = os.path.join(SCRIPT_DIR, "smtp_auth.key")
 IP_DETECT_URL = "https://api.ipify.org"
 
 DEFAULTS = {
-    "tenant_id": "00000000-0000-0000-0000-000000000000",  # Example GUID
-    "client_id": "11111111-2222-3333-4444-555555555555",  # Example GUID
+    "tenant_id": "",
+    "client_id": "",
     "certificate_path": "/etc/ssl/private/dnssync-combined.pem",
-    "resource_group": "EXAMPLE_RESOURCE_GROUP",
-    "zone_name": "example.com",
-    "record_set_name": "ip",
+    "resource_group": "",
+    "zone_name": "",
+    "record_set_name": "",
     "ttl": 300,
-    "email_from": "dns-sync@example.com",
-    "email_to": "admin@example.com",
-    "smtp_server": "smtp.example.com",
+    "email_from": "",
+    "email_to": "",
+    "smtp_server": "",
     "smtp_port": 587,
-    "smtp_username": "apikey",  # or your_smtp2go_username
-    "schedule_minutes": 5,
-    "scheduled": True,
-    "subscription_id": "abcdef12-3456-7890-abcd-ef1234567890", # Example GUID
+    "smtp_username": "apikey",
+    "subscription_id": "",
     "certificate_password": ""
 }
 
@@ -110,48 +103,29 @@ def prompt_and_store_smtp_key(keyfile_path, defaults):
     print(f"SMTP credentials saved to {keyfile_path} (permissions set to 600)")
 
 def is_interactive():
-    # Checks if both stdin and stdout are attached to a TTY
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 def prompt_config(defaults):
     print("\n--- Azure DNS Dynamic Updater Initial Configuration ---\n")
     config = {}
 
-    # AZURE SECTION
     print("\nAzure Configuration:")
     config['tenant_id'] = input(f"Tenant ID [{defaults['tenant_id']}]: ").strip() or defaults['tenant_id']
     config['client_id'] = input(f"Application ID [{defaults['client_id']}]: ").strip() or defaults['client_id']
     config['subscription_id'] = input(f"Subscription ID [{defaults['subscription_id']}]: ").strip() or defaults['subscription_id']
-    config['certificate_path'] = defaults['certificate_path']  # Always use default, do not prompt
+    config['certificate_path'] = defaults['certificate_path']
     config['resource_group'] = input(f"Resource Group [{defaults['resource_group']}]: ").strip() or defaults['resource_group']
     config['zone_name'] = input(f"Zone Name [{defaults['zone_name']}]: ").strip() or defaults['zone_name']
     config['record_set_name'] = input(f"Record Set Name [{defaults['record_set_name']}]: ").strip() or defaults['record_set_name']
     config['ttl'] = int(input(f"TTL [{defaults['ttl']}]: ").strip() or defaults['ttl'])
 
-    # EMAIL SECTION
     print("\nEmail/SMTP Configuration:")
     config['email_from'] = input(f"Email Address From [{defaults['email_from']}]: ").strip() or defaults['email_from']
     config['email_to'] = input(f"Email Address To [{defaults['email_to']}]: ").strip() or defaults['email_to']
     config['smtp_server'] = input(f"SMTP Server [{defaults['smtp_server']}]: ").strip() or defaults['smtp_server']
     config['smtp_port'] = int(input(f"SMTP Port [{defaults['smtp_port']}]: ").strip() or defaults['smtp_port'])
-    # SMTP username is not prompted here anymore!
 
-    # SMTP CREDENTIALS SECTION
     prompt_and_store_smtp_key(SMTP_KEY_FILE, defaults)
-
-    # SCHEDULER SECTION
-    print("\nScheduling Configuration:")
-    while True:
-        schedule_minutes = input(f"How often should the updater run (in minutes)? [{defaults['schedule_minutes']}]: ").strip()
-        if not schedule_minutes or schedule_minutes.lower() in ("y", "yes"):
-            config['schedule_minutes'] = defaults['schedule_minutes']
-            break
-        try:
-            config['schedule_minutes'] = int(schedule_minutes)
-            break
-        except ValueError:
-            print("Please enter a number (in minutes), or press Enter to accept the default.")
-    config['scheduled'] = True
 
     config["certificate_password"] = defaults["certificate_password"]
     return config
@@ -193,24 +167,7 @@ def send_email(subject, body, config):
     except Exception as e:
         log_update(f"{datetime.now()}: Failed to send email: {e}")
 
-def schedule_cron(minutes):
-    python_path = subprocess.check_output(['which', 'python3']).decode().strip()
-    script_path = os.path.abspath(__file__)
-    cron_line = f"*/{minutes} * * * * {python_path} {script_path} > /dev/null 2>&1\n"
-    try:
-        existing = subprocess.check_output(['crontab', '-l'], stderr=subprocess.STDOUT).decode()
-    except subprocess.CalledProcessError:
-        existing = ""
-    if cron_line not in existing:
-        updated = existing + cron_line
-        proc = subprocess.Popen(['crontab', '-'], stdin=subprocess.PIPE)
-        proc.communicate(updated.encode())
-        print("Cron job added.")
-    else:
-        print("Crontab entry already exists.")
-
 def load_or_create_config():
-    # If config exists, load it and fill in any missing keys with defaults
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE) as f:
             config = yaml.safe_load(f) or {}
@@ -222,11 +179,8 @@ def load_or_create_config():
         if updated:
             with open(CONFIG_FILE, "w") as f:
                 yaml.safe_dump(config, f)
-        # Ensure SMTP key file exists and is valid
         if not os.path.exists(SMTP_KEY_FILE):
             prompt_and_store_smtp_key(SMTP_KEY_FILE, DEFAULTS)
-        # Always ensure the cron is scheduled based on config
-        schedule_cron(config.get('schedule_minutes', DEFAULTS["schedule_minutes"]))
         return config
     else:
         if not is_interactive():
@@ -234,7 +188,6 @@ def load_or_create_config():
             print(f"Please run this script in an interactive shell to complete initial setup:\n  sudo python3 {os.path.abspath(__file__)}")
             sys.exit(2)
         config = prompt_config(DEFAULTS.copy())
-        schedule_cron(config["schedule_minutes"])
         with open(CONFIG_FILE, "w") as f:
             yaml.safe_dump(config, f)
         return config
@@ -340,7 +293,6 @@ def update_azure_dns(new_ip, config):
         return False
 
 def run_interactive_setup():
-    # Use latest config as defaults if present
     defaults = DEFAULTS.copy()
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
@@ -355,8 +307,6 @@ def run_interactive_setup():
     with open(CONFIG_FILE, "w") as f:
         yaml.safe_dump(config, f)
     print("\nConfiguration complete! All settings saved.\n")
-    # Schedule cron based on new config
-    schedule_cron(config["schedule_minutes"])
 
 def main():
     parser = argparse.ArgumentParser(description="Azure DNS Sync Script")
