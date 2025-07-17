@@ -1,143 +1,142 @@
 #!/bin/bash
+: <<'SYNOPSIS'
+AzureDNSSync Installer
+
+Author: Andrew Kemp <andrew@kemponline.co.uk>
+Version: 1.3.0
+First Created: 2024-06-01
+Last Updated: 2025-07-17
+
+Synopsis:
+    This installer sets up AzureDNSSync for automatic dynamic DNS updates on Azure DNS.
+    - Prompts for all configuration (Azure, DNS, and email/SMTP details).
+    - Writes config.yaml and smtp_auth.key.
+    - Installs and enables systemd service and timer for scheduled runs.
+    - Handles all permissions and environment setup.
+
+Dependencies:
+    - bash
+    - python3, pip, venv
+    - systemd
+
+License: MIT
+SYNOPSIS
 
 set -e
 
-SCRIPT_NAME="azurednssync.py"
 INSTALL_DIR="/etc/azurednssync"
-CERT_DIR="/etc/ssl/private"
-CERT_NAME="dnssync"
-COMBINED_PEM="$CERT_DIR/dnssync-combined.pem"
-PYTHON_DEPS="python3 python3-venv"
-PIP_DEPS="azure-identity azure-mgmt-dns pyyaml requests"
 VENV_DIR="$INSTALL_DIR/venv"
-GITHUB_RAW_URL="https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/azurednssync.py"
+CONFIG_FILE="$INSTALL_DIR/config.yaml"
+SMTP_KEY_FILE="$INSTALL_DIR/smtp_auth.key"
+SERVICE_FILE="/etc/systemd/system/azurednssync.service"
+TIMER_FILE="/etc/systemd/system/azurednssync.timer"
 
-command_exists() {
-    command -v "$1" &>/dev/null
-}
+echo "==== AzureDNSSync Installer v1.3.0 ===="
 
-echo_title() {
-    echo
-    echo "=============================="
-    echo "$@"
-    echo "=============================="
-}
-
-# 1. Ensure required system packages are installed
-echo_title "Checking/installing system dependencies"
-if ! command_exists python3; then
-    echo "Installing python3..."
-    sudo apt-get update
-    sudo apt-get install -y python3
-fi
-if ! dpkg -s python3-venv &>/dev/null; then
-    echo "Installing python3-venv..."
-    sudo apt-get install -y python3-venv
-fi
-if ! command_exists openssl; then
-    echo "Installing openssl..."
-    sudo apt-get install -y openssl
+# Ensure running as root
+if [[ $EUID -ne 0 ]]; then
+   echo "Please run as root (sudo $0)"
+   exit 1
 fi
 
-# 2. Create install and cert directories
-echo_title "Setting up script and certificate directories"
-sudo mkdir -p "$INSTALL_DIR"
-sudo mkdir -p "$CERT_DIR"
-sudo chmod 700 "$INSTALL_DIR"
-sudo chmod 700 "$CERT_DIR"
+mkdir -p "$INSTALL_DIR"
 
-# 3. Set up Python virtual environment
-echo_title "Setting up Python virtual environment"
+# Download or copy the latest azurednssync.py
+if [ ! -f "$INSTALL_DIR/azurednssync.py" ]; then
+    echo "Copy or download your azurednssync.py into $INSTALL_DIR before running this installer."
+    exit 1
+fi
+
+# Set up Python virtual environment and dependencies
 if [ ! -d "$VENV_DIR" ]; then
-    sudo python3 -m venv "$VENV_DIR"
+    python3 -m venv "$VENV_DIR"
 fi
-sudo "$VENV_DIR/bin/pip" install --upgrade pip
-sudo "$VENV_DIR/bin/pip" install $PIP_DEPS
+source "$VENV_DIR/bin/activate"
+pip install --upgrade pip
+pip install azure-identity azure-mgmt-dns requests pyyaml
 
-# 4. Download azurednssync.py from GitHub
-echo_title "Downloading $SCRIPT_NAME from GitHub"
-curl -fsSL "$GITHUB_RAW_URL" -o "/tmp/$SCRIPT_NAME"
-sudo cp "/tmp/$SCRIPT_NAME" "$INSTALL_DIR/"
-sudo chmod 700 "$INSTALL_DIR/$SCRIPT_NAME"
-
-# 5. Generate certificate and key
-echo_title "Generating self-signed certificate"
-cd "$CERT_DIR"
-if [ ! -f "${CERT_NAME}.key" ] || [ ! -f "${CERT_NAME}.crt" ]; then
-    sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-        -keyout "${CERT_NAME}.key" \
-        -out "${CERT_NAME}.crt" \
-        -subj "/CN=azurednssync"
-    sudo chmod 600 "${CERT_NAME}.key" "${CERT_NAME}.crt"
-else
-    echo "Certificate files already exist: ${CERT_NAME}.key, ${CERT_NAME}.crt"
-fi
-
-# 6. Create combined PEM file
-echo_title "Combining key and cert into PEM"
-sudo sh -c "cat ${CERT_NAME}.key ${CERT_NAME}.crt > $COMBINED_PEM"
-sudo chmod 600 "$COMBINED_PEM"
-
-# 7. Display public certificate block for Azure
-echo_title "Azure App Registration Certificate Block"
-echo "Copy the block below and paste it into your Azure AD App Registration as a public certificate:"
+# Prompt for config
+read -p "Azure Tenant ID: " TENANT_ID
+read -p "Azure Application ID (client_id): " CLIENT_ID
+read -p "Azure Subscription ID: " SUBSCRIPTION_ID
+read -p "Azure Resource Group: " RESOURCE_GROUP
+read -p "DNS Zone Name (e.g. example.com): " ZONE_NAME
+read -p "DNS Record Set Name (e.g. ip): " RECORD_SET_NAME
+read -p "DNS TTL [300]: " TTL
+TTL=${TTL:-300}
+read -p "Notification Email From: " EMAIL_FROM
+read -p "Notification Email To: " EMAIL_TO
+read -p "SMTP Server: " SMTP_SERVER
+read -p "SMTP Port [587]: " SMTP_PORT
+SMTP_PORT=${SMTP_PORT:-587}
+read -p "SMTP Username: " SMTP_USERNAME
+read -sp "SMTP Password: " SMTP_PASSWORD
 echo
-sudo awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print}' "$CERT_DIR/${CERT_NAME}.crt"
+read -p "Path to Azure app certificate [/etc/ssl/private/dnssync-combined.pem]: " CERT_PATH
+CERT_PATH=${CERT_PATH:-/etc/ssl/private/dnssync-combined.pem}
+read -sp "Certificate password (if any, else leave blank): " CERT_PASSWORD
 echo
 
-# --- NEW: Prompt to continue after copying the certificate block ---
-if [ -t 1 ]; then
-    echo
-    read -rsp "Press Enter to continue once you have copied the certificate block to Azure..." dummy
-    echo
-fi
+# Prompt for frequency (schedule in minutes)
+read -p "How often should the updater run (in minutes)? [5]: " SCHEDULE_MINUTES
+SCHEDULE_MINUTES=${SCHEDULE_MINUTES:-5}
 
-# 8. Initial configuration wizard (optional) and cron job setup
-VENV_PY="$VENV_DIR/bin/python"
-CRON_LINE="*/5 * * * * $VENV_PY $INSTALL_DIR/$SCRIPT_NAME > /dev/null 2>&1"
+# Write config.yaml
+cat > "$CONFIG_FILE" <<EOF
+tenant_id: $TENANT_ID
+client_id: $CLIENT_ID
+subscription_id: $SUBSCRIPTION_ID
+certificate_path: $CERT_PATH
+resource_group: $RESOURCE_GROUP
+zone_name: $ZONE_NAME
+record_set_name: $RECORD_SET_NAME
+ttl: $TTL
+email_from: $EMAIL_FROM
+email_to: $EMAIL_TO
+smtp_server: $SMTP_SERVER
+smtp_port: $SMTP_PORT
+certificate_password: "$CERT_PASSWORD"
+EOF
+chmod 600 "$CONFIG_FILE"
 
-if [ -t 1 ]; then
-    while true; do
-        echo
-        read -rp "Would you like to run the AzureDNSSync configuration wizard now? [Y/n]: " RUNCONF
-        case "$RUNCONF" in
-            [Yy]*|"")
-                echo_title "Starting AzureDNSSync configuration wizard..."
-                sudo "$VENV_PY" "$INSTALL_DIR/$SCRIPT_NAME"
-                break
-                ;;
-            [Nn]*)
-                echo
-                echo "You can run the configuration wizard later with:"
-                echo "  sudo $VENV_PY $INSTALL_DIR/$SCRIPT_NAME"
-                break
-                ;;
-            *)
-                echo "Please answer y or n."
-                ;;
-        esac
-    done
-else
-    echo_title "Manual Configuration Required"
-    echo "No interactive terminal detected."
-    echo "Please run the configuration wizard manually with:"
-    echo "  sudo $VENV_PY $INSTALL_DIR/$SCRIPT_NAME"
-    echo
-fi
+# Write smtp_auth.key
+cat > "$SMTP_KEY_FILE" <<EOF
+username:$SMTP_USERNAME
+password:$SMTP_PASSWORD
+EOF
+chmod 600 "$SMTP_KEY_FILE"
 
-# (Re)install the cron job to use the venv Python
-echo_title "Setting up cron job"
-# Remove any old jobs for azurednssync
-( sudo crontab -l | grep -v "$SCRIPT_NAME" ; echo "$CRON_LINE" ) | sudo crontab -
+# Write the systemd service file
+cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=Azure DNS Sync (periodic updater)
+After=network.target
 
-echo
-echo "=============================="
-echo "INSTALLATION COMPLETE"
-echo "=============================="
-echo "Next steps:"
-echo "1. Upload the certificate block above to your Azure App Registration."
-echo "2. If config is not yet completed, run:"
-echo "   sudo $VENV_PY $INSTALL_DIR/$SCRIPT_NAME"
-echo "3. The updater will now run every 5 minutes via cron."
-echo "Log file: $INSTALL_DIR/update.log"
-echo
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$VENV_DIR/bin/python $INSTALL_DIR/azurednssync.py
+EOF
+
+# Write the systemd timer file
+cat > "$TIMER_FILE" <<EOF
+[Unit]
+Description=Run Azure DNS Sync every $SCHEDULE_MINUTES minutes
+
+[Timer]
+OnBootSec=${SCHEDULE_MINUTES}min
+OnUnitActiveSec=${SCHEDULE_MINUTES}min
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# Reload systemd, enable and start the timer
+systemctl daemon-reload
+systemctl enable azurednssync.timer
+systemctl restart azurednssync.timer
+
+echo "Installation complete."
+echo "You can check the status with: sudo systemctl status azurednssync.timer"
+echo "Logs: sudo journalctl -u azurednssync.service"
