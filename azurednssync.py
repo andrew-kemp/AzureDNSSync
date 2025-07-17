@@ -1,8 +1,48 @@
+"""
+AzureDNSSync - Dynamic DNS Updater for Azure DNS
+
+Author: Andrew Kemp <andrew@kemponline.co.uk>
+Version: 1.2.0
+First Created: 2024-06-01
+Last Updated: 2025-07-17
+
+Synopsis:
+    This script checks your public IP address and updates an Azure DNS A record if it has changed.
+    It supports automatic scheduling via cron and can send notification emails on updates.
+
+Install:
+    # Download and run the installer
+    curl -fsSL https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/install.sh -o install.sh
+    chmod +x install.sh
+    sudo ./install.sh
+
+Manual Run:
+    sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py
+
+Reconfigure:
+    sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py --reconfig
+
+Dependencies:
+    - Python 3.x
+    - azure-identity
+    - azure-mgmt-dns
+    - requests
+    - pyyaml
+
+Config/Secrets:
+    - Stores config in config.yaml and SMTP credentials in smtp_auth.key (permissions 600).
+
+License: MIT
+"""
+
+__version__ = "1.2.0"
+
 import os
 import sys
 import yaml
 import requests
 import subprocess
+import argparse
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
@@ -35,7 +75,6 @@ DEFAULTS = {
     "smtp_server": "smtp.example.com",
     "smtp_port": 587,
     "smtp_username": "apikey",  # or your_smtp2go_username
-    # "smtp_password": "SG.xxxxxxxx.yyyyyyyyzzzzzzzz",  # <-- REMOVED! Now only in smtp_auth.key
     "schedule_minutes": 5,
     "scheduled": True,
     "subscription_id": "abcdef12-3456-7890-abcd-ef1234567890", # Example GUID
@@ -81,7 +120,7 @@ def prompt_config(defaults):
     # AZURE SECTION
     print("\nAzure Configuration:")
     config['tenant_id'] = input(f"Tenant ID [{defaults['tenant_id']}]: ").strip() or defaults['tenant_id']
-    config['client_id'] = input(f"Client ID [{defaults['client_id']}]: ").strip() or defaults['client_id']
+    config['client_id'] = input(f"Application ID [{defaults['client_id']}]: ").strip() or defaults['client_id']
     config['subscription_id'] = input(f"Subscription ID [{defaults['subscription_id']}]: ").strip() or defaults['subscription_id']
     config['certificate_path'] = defaults['certificate_path']  # Always use default, do not prompt
     config['resource_group'] = input(f"Resource Group [{defaults['resource_group']}]: ").strip() or defaults['resource_group']
@@ -95,7 +134,7 @@ def prompt_config(defaults):
     config['email_to'] = input(f"Email Address To [{defaults['email_to']}]: ").strip() or defaults['email_to']
     config['smtp_server'] = input(f"SMTP Server [{defaults['smtp_server']}]: ").strip() or defaults['smtp_server']
     config['smtp_port'] = int(input(f"SMTP Port [{defaults['smtp_port']}]: ").strip() or defaults['smtp_port'])
-    config['smtp_username'] = input(f"SMTP Username [{defaults.get('smtp_username','apikey')}]: ").strip() or defaults.get('smtp_username','apikey')
+    # SMTP username is not prompted here anymore!
 
     # SMTP CREDENTIALS SECTION
     prompt_and_store_smtp_key(SMTP_KEY_FILE, defaults)
@@ -300,7 +339,37 @@ def update_azure_dns(new_ip, config):
         log_update(f"{datetime.now()}: Azure DNS update failed: {e}")
         return False
 
+def run_interactive_setup():
+    # Use latest config as defaults if present
+    defaults = DEFAULTS.copy()
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as f:
+            existing = yaml.safe_load(f)
+            if existing:
+                defaults.update(existing)
+    if os.path.exists(SMTP_KEY_FILE):
+        smtp_user, _ = read_smtp_key(SMTP_KEY_FILE)
+        if smtp_user:
+            defaults['smtp_username'] = smtp_user
+    config = prompt_config(defaults)
+    with open(CONFIG_FILE, "w") as f:
+        yaml.safe_dump(config, f)
+    print("\nConfiguration complete! All settings saved.\n")
+    # Schedule cron based on new config
+    schedule_cron(config["schedule_minutes"])
+
 def main():
+    parser = argparse.ArgumentParser(description="Azure DNS Sync Script")
+    parser.add_argument('--reconfig', action='store_true', help='Run interactive configuration')
+    parser.add_argument('--version', action='version', version=f"%(prog)s {__version__}")
+    args = parser.parse_args()
+
+    if args.reconfig:
+        print("Running interactive configuration...")
+        run_interactive_setup()
+        print("Configuration updated successfully!")
+        sys.exit(0)
+
     config = load_or_create_config()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     public_ip = get_public_ip()
