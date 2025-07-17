@@ -7,11 +7,10 @@ INSTALL_DIR="/etc/azurednssync"
 CERT_DIR="/etc/ssl/private"
 CERT_NAME="dnssync"
 COMBINED_PEM="$CERT_DIR/dnssync-combined.pem"
-CRT_FILE="$CERT_DIR/${CERT_NAME}.crt"
 PYTHON_DEPS="python3 python3-venv"
 PIP_DEPS="azure-identity azure-mgmt-dns pyyaml requests"
 VENV_DIR="$INSTALL_DIR/venv"
-GITHUB_RAW_URL="https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/refs/heads/main/azurednssync.py"
+GITHUB_RAW_URL="https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/azurednssync.py"
 
 command_exists() {
     command -v "$1" &>/dev/null
@@ -79,13 +78,59 @@ echo_title "Combining key and cert into PEM"
 sudo sh -c "cat ${CERT_NAME}.key ${CERT_NAME}.crt > $COMBINED_PEM"
 sudo chmod 600 "$COMBINED_PEM"
 
-# 7. Display public certificate block for Azure (no extra BEGIN/END lines)
+# 7. Display public certificate block for Azure
 echo_title "Azure App Registration Certificate Block"
 echo "Copy the block below and paste it into your Azure AD App Registration as a public certificate:"
 echo
-sudo awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print}' "$CRT_FILE"
+sudo awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print}' "$CERT_DIR/${CERT_NAME}.crt"
 echo
 
-# 8. Run configuration immediately
-echo_title "Starting AzureDNSSync configuration..."
-sudo "$VENV_DIR/bin/python" "$INSTALL_DIR/$SCRIPT_NAME"
+# 8. Initial configuration wizard (optional) and cron job setup
+VENV_PY="$VENV_DIR/bin/python"
+CRON_LINE="*/5 * * * * $VENV_PY $INSTALL_DIR/$SCRIPT_NAME > /dev/null 2>&1"
+
+if [ -t 1 ]; then
+    while true; do
+        echo
+        read -rp "Would you like to run the AzureDNSSync configuration wizard now? [Y/n]: " RUNCONF
+        case "$RUNCONF" in
+            [Yy]*|"") # Default to yes on empty
+                echo_title "Starting AzureDNSSync configuration wizard..."
+                sudo "$VENV_PY" "$INSTALL_DIR/$SCRIPT_NAME"
+                break
+                ;;
+            [Nn]*)
+                echo
+                echo "You can run the configuration wizard later with:"
+                echo "  sudo $VENV_PY $INSTALL_DIR/$SCRIPT_NAME"
+                break
+                ;;
+            *)
+                echo "Please answer y or n."
+                ;;
+        esac
+    done
+else
+    echo_title "Manual Configuration Required"
+    echo "No interactive terminal detected."
+    echo "Please run the configuration wizard manually with:"
+    echo "  sudo $VENV_PY $INSTALL_DIR/$SCRIPT_NAME"
+    echo
+fi
+
+# (Re)install the cron job to use the venv Python
+echo_title "Setting up cron job"
+# Remove any old jobs for azurednssync
+( sudo crontab -l | grep -v "$SCRIPT_NAME" ; echo "$CRON_LINE" ) | sudo crontab -
+
+echo
+echo "=============================="
+echo "INSTALLATION COMPLETE"
+echo "=============================="
+echo "Next steps:"
+echo "1. Upload the certificate block above to your Azure App Registration."
+echo "2. If config is not yet completed, run:"
+echo "   sudo $VENV_PY $INSTALL_DIR/$SCRIPT_NAME"
+echo "3. The updater will now run every 5 minutes via cron."
+echo "Log file: $INSTALL_DIR/update.log"
+echo
