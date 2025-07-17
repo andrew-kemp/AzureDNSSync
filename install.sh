@@ -4,7 +4,7 @@
 AzureDNSSync Unified Installer
 
 Author: Andrew Kemp <andrew@kemponline.co.uk>
-Version: 1.3.0
+Version: 1.4.0
 First Created: 2024-06-01
 Last Updated: 2025-07-17
 
@@ -12,7 +12,7 @@ Synopsis:
     - Installs Python/venv if needed, and required pip packages.
     - Handles all directory setup and permissions.
     - Generates or detects self-signed cert and key, combines to PEM, shows public cert for Azure.
-    - Prompts for all config values (with examples).
+    - Prompts for all config values (with examples, grouped).
     - Writes config.yaml and smtp_auth.key.
     - Creates and enables systemd service and timer for scheduled runs.
     - No cron job—uses systemd (recommended).
@@ -116,39 +116,47 @@ echo
 awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print}' "$CERT_DIR/${CERT_NAME}.crt"
 echo
 
-# 8. Prompt for config with examples/defaults
-echo_title "Gathering configuration details"
+# 8. Prompt for config with grouped sections and secure password input
+echo
+echo "--- Azure DNS Dynamic Updater Initial Configuration ---"
+echo
 
-read -p "Azure Tenant ID [00000000-0000-0000-0000-000000000000]: " TENANT_ID
+echo "Azure Configuration:"
+read -p "Tenant ID [00000000-0000-0000-0000-000000000000]: " TENANT_ID
 TENANT_ID=${TENANT_ID:-00000000-0000-0000-0000-000000000000}
-read -p "Azure Application ID (client_id) [11111111-2222-3333-4444-555555555555]: " CLIENT_ID
+read -p "Application ID [11111111-2222-3333-4444-555555555555]: " CLIENT_ID
 CLIENT_ID=${CLIENT_ID:-11111111-2222-3333-4444-555555555555}
-read -p "Azure Subscription ID [abcdef12-3456-7890-abcd-ef1234567890]: " SUBSCRIPTION_ID
+read -p "Subscription ID [abcdef12-3456-7890-abcd-ef1234567890]: " SUBSCRIPTION_ID
 SUBSCRIPTION_ID=${SUBSCRIPTION_ID:-abcdef12-3456-7890-abcd-ef1234567890}
-read -p "Azure Resource Group [EXAMPLE_RESOURCE_GROUP]: " RESOURCE_GROUP
+read -p "Resource Group [EXAMPLE_RESOURCE_GROUP]: " RESOURCE_GROUP
 RESOURCE_GROUP=${RESOURCE_GROUP:-EXAMPLE_RESOURCE_GROUP}
-read -p "DNS Zone Name (e.g. example.com) [example.com]: " ZONE_NAME
+read -p "Zone Name [example.com]: " ZONE_NAME
 ZONE_NAME=${ZONE_NAME:-example.com}
-read -p "DNS Record Set Name (e.g. ip) [ip]: " RECORD_SET_NAME
+read -p "Record Set Name [ip]: " RECORD_SET_NAME
 RECORD_SET_NAME=${RECORD_SET_NAME:-ip}
-read -p "DNS TTL [300]: " TTL
+read -p "TTL [300]: " TTL
 TTL=${TTL:-300}
-read -p "Notification Email From [dns-sync@example.com]: " EMAIL_FROM
+read -sp "Certificate password (if any, else leave blank): " CERT_PASSWORD
+echo
+
+echo
+echo "Email/SMTP Configuration:"
+read -p "Email Address From [dns-sync@example.com]: " EMAIL_FROM
 EMAIL_FROM=${EMAIL_FROM:-dns-sync@example.com}
-read -p "Notification Email To [admin@example.com]: " EMAIL_TO
+read -p "Email Address To [admin@example.com]: " EMAIL_TO
 EMAIL_TO=${EMAIL_TO:-admin@example.com}
 read -p "SMTP Server [smtp.example.com]: " SMTP_SERVER
 SMTP_SERVER=${SMTP_SERVER:-smtp.example.com}
 read -p "SMTP Port [587]: " SMTP_PORT
 SMTP_PORT=${SMTP_PORT:-587}
+
+echo
+echo "--- SMTP Credentials ---"
 read -p "SMTP Username [apikey]: " SMTP_USERNAME
 SMTP_USERNAME=${SMTP_USERNAME:-apikey}
-read -sp "SMTP Password: " SMTP_PASSWORD
+read -sp "SMTP API Key or password: " SMTP_PASSWORD
 echo
-read -p "Path to Azure app certificate [$COMBINED_PEM]: " CERT_PATH
-CERT_PATH=${CERT_PATH:-$COMBINED_PEM}
-read -sp "Certificate password (if any, else leave blank): " CERT_PASSWORD
-echo
+
 read -p "How often should the updater run (in minutes)? [5]: " SCHEDULE_MINUTES
 SCHEDULE_MINUTES=${SCHEDULE_MINUTES:-5}
 
@@ -157,7 +165,7 @@ cat > "$CONFIG_FILE" <<EOF
 tenant_id: $TENANT_ID
 client_id: $CLIENT_ID
 subscription_id: $SUBSCRIPTION_ID
-certificate_path: $CERT_PATH
+certificate_path: $COMBINED_PEM
 resource_group: $RESOURCE_GROUP
 zone_name: $ZONE_NAME
 record_set_name: $RECORD_SET_NAME
@@ -176,6 +184,11 @@ username:$SMTP_USERNAME
 password:$SMTP_PASSWORD
 EOF
 chmod 600 "$SMTP_KEY_FILE"
+echo "SMTP credentials saved to $SMTP_KEY_FILE (permissions set to 600)"
+
+echo
+echo "Configuration complete! All settings saved."
+echo
 
 # 11. Write the systemd service file
 cat > "$SERVICE_FILE" <<EOF
