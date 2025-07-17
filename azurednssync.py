@@ -1,4 +1,5 @@
 import os
+import sys
 import yaml
 import requests
 import subprocess
@@ -27,7 +28,7 @@ DEFAULTS = {
     "certificate_path": "/etc/ssl/private/dnssync-combined.pem",
     "resource_group": "EXAMPLE_RESOURCE_GROUP",
     "zone_name": "example.com",
-    "record_set_name": "dynamic",
+    "record_set_name": "ip",
     "ttl": 300,
     "email_from": "dns-sync@example.com",
     "email_to": "admin@example.com",
@@ -69,6 +70,10 @@ def prompt_and_store_smtp_key(keyfile_path, defaults):
     os.chmod(keyfile_path, 0o600)
     print(f"SMTP credentials saved to {keyfile_path} (permissions set to 600)")
 
+def is_interactive():
+    # Checks if both stdin and stdout are attached to a TTY
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
 def prompt_config(defaults):
     print("\n--- Azure DNS Dynamic Updater Initial Configuration ---\n")
     config = {}
@@ -78,7 +83,7 @@ def prompt_config(defaults):
     config['tenant_id'] = input(f"Tenant ID [{defaults['tenant_id']}]: ").strip() or defaults['tenant_id']
     config['client_id'] = input(f"Client ID [{defaults['client_id']}]: ").strip() or defaults['client_id']
     config['subscription_id'] = input(f"Subscription ID [{defaults['subscription_id']}]: ").strip() or defaults['subscription_id']
-    config['certificate_path'] = input(f"Certificate Path [{defaults['certificate_path']}]: ").strip() or defaults['certificate_path']
+    config['certificate_path'] = defaults['certificate_path']  # Always use default, do not prompt
     config['resource_group'] = input(f"Resource Group [{defaults['resource_group']}]: ").strip() or defaults['resource_group']
     config['zone_name'] = input(f"Zone Name [{defaults['zone_name']}]: ").strip() or defaults['zone_name']
     config['record_set_name'] = input(f"Record Set Name [{defaults['record_set_name']}]: ").strip() or defaults['record_set_name']
@@ -165,6 +170,7 @@ def schedule_cron(minutes):
         print("Crontab entry already exists.")
 
 def load_or_create_config():
+    # If config exists, load it and fill in any missing keys with defaults
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE) as f:
             config = yaml.safe_load(f) or {}
@@ -183,6 +189,10 @@ def load_or_create_config():
         schedule_cron(config.get('schedule_minutes', DEFAULTS["schedule_minutes"]))
         return config
     else:
+        if not is_interactive():
+            print("ERROR: No configuration found and no interactive terminal detected.")
+            print(f"Please run this script in an interactive shell to complete initial setup:\n  sudo python3 {os.path.abspath(__file__)}")
+            sys.exit(2)
         config = prompt_config(DEFAULTS.copy())
         schedule_cron(config["schedule_minutes"])
         with open(CONFIG_FILE, "w") as f:
