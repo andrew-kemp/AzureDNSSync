@@ -1,126 +1,155 @@
-# AzureDNSSync
+# 🚀 AzureDNSSync
 
-A secure dynamic DNS updater for Azure DNS using a Service Principal and certificate authentication.
-
----
-
-## Features
-
-- Updates an Azure DNS A record with your current public IP.
-- Uses a Service Principal with certificate for secure, automated, passwordless authentication.
-- Runs on a schedule (via cron).
-- Notifies via email on changes (optional).
-- Simple installer script and initial configuration wizard.
+**AzureDNSSync** is your friendly, no-fuss dynamic DNS updater for Azure DNS!  
+It runs quietly in the background on your Ubuntu server, automatically keeping your DNS record up to date whenever your public IP changes—so your domain always points to the right place.
 
 ---
 
-## Prerequisites
+## ✨ Features
 
-- **An Azure Subscription**
-- **A Linux machine (Debian/Ubuntu recommended) with `sudo` privileges**
-- **Python 3.8+** (and `python3-venv` package)
-- **App Registration** in Azure AD with certificate authentication and proper IAM/RBAC permissions
-
----
-
-## 1. Create an Azure App Registration
-
-1. Go to [Azure Portal](https://portal.azure.com/) > **Azure Active Directory** > **App registrations** > **New registration**
-2. Name: `AzureDNSSync` (or any name)
-3. Redirect URI: leave blank
-4. After creation, note your:
-   - **Directory (tenant) ID**
-   - **Application (client) ID**
-
-### Add a Certificate
-
-5. In the App Registration, go to **Certificates & secrets** > **Certificates**
-6. When you run `install.sh` (below), it will generate a certificate.  
-   After install, copy the certificate block shown and add as a new certificate here.
-
-### Assign Azure DNS Permissions
-
-7. Go to your DNS Zone's resource group in the portal.
-8. Under **Access control (IAM)**, add a **Role Assignment**:
-   - **Role**: `DNS Zone Contributor` (or `Contributor` if you want full access)
-   - **Assign access to**: `App Registration` you created above
+- ⏰ **Automatic public IP detection** whenever your IP changes
+- 🔑 **Secure authentication** using Azure Entra (Azure AD) App Certificate
+- 📝 **Simple YAML configuration**—easy to set up, easy to read
+- 🛡️ **Runs as a systemd service & timer** (no cron needed!)
+- 📧 **Email notifications** whenever your DNS is updated
+- 🦾 **Works on vanilla Ubuntu 24.04+** (installs all dependencies for you)
+- 🛠️ **Self-generates certificates** and handles all the permissions magic
+- 🌍 **Minimal requirements:** No GUI, no browser, just SSH in and go!
 
 ---
 
-## 2. Quick Install
+## 🛒 Requirements
 
-You can install and set up AzureDNSSync in one step using this command:
+- Ubuntu 24.04 or later
+- Python 3.10+
+- An Azure subscription (with a DNS Zone set up)
+- An Azure Entra (AD) App Registration with certificate authentication and DNS Zone permissions (see below)
+- An SMTP mail account for notifications (optional, but highly recommended!)
+
+---
+
+## 🚦 Super-Quick Install
+
+**You don’t need to clone this repo or mess with pip manually!**  
+Just run the installer script below and follow the prompts:
 
 ```bash
-sudo bash -c "curl -fsSL https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/install.sh | bash"
+curl -fsSL https://raw.githubusercontent.com/andrew-kemp/AzureDNSSync/main/install.sh | sudo bash
 ```
 
-- This downloads and runs the latest installer.  
-- You do **not** need to clone the repo or download any files manually!
-- The script downloads `azurednssync.py` automatically.
+- The script will:
+  - Install all required system packages and Python dependencies
+  - Generate a private certificate for Azure App Registration (and display the public part for you)
+  - Prompt you for your Azure and DNS details (with helpful examples)
+  - Write all configuration and credentials securely
+  - Set up a systemd service and timer (runs every 5 minutes by default)
+  - Done! 🎉
 
 ---
 
-## 3. What the Installer Does
+## 🧙 Initial Setup Walkthrough
 
-- Installs dependencies in a Python virtual environment (no system pollution)
-- Downloads the latest `azurednssync.py`
-- Generates a private key and certificate in `/etc/ssl/private/`
-- Combines key and cert into a PEM for use by Azure SDK
-- Shows you the certificate block to copy into Azure App Registration
-- Optionally runs the initial configuration wizard
+During install, you’ll be asked for:
+
+**Azure Details:**
+- Tenant ID (looks like `00000000-0000-0000-0000-000000000000`)
+- Application (Client) ID (`11111111-2222-3333-4444-555555555555`)
+- Subscription ID
+- Resource Group (where your DNS zone lives)
+- DNS Zone Name (e.g. `example.com`)
+- Record Set Name (e.g. `ip`)
+- TTL (e.g. `300`)
+
+**SMTP Email Details:**
+- Who the notifications come from and go to
+- SMTP server/port/username/password
+
+**Certificate Password:**
+- Optional, leave blank unless you want to encrypt your generated certificate
 
 ---
 
-## 4. Configure the Updater
+## 🏛️ Azure Setup: Certificate-Based App Registration
 
-If you didn't run the wizard at the end of install, run:
+1. In Azure Portal, go to **Azure Active Directory → App registrations → New registration**.
+2. Under your app, go to **Certificates & Secrets → Certificates → Upload certificate**.
+   - Use the **public certificate block** displayed by the installer.
+3. Assign the app **DNS Zone Contributor** role to your DNS resource group.
 
-```bash
-sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py
+---
+
+## 🛠️ Advanced: Reconfiguring or Customizing
+
+- **Change config or SMTP details:**  
+  ```bash
+  sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py --reconfig
+  ```
+- **Change how often it runs:**  
+  Edit and rerun the installer, or tweak `/etc/systemd/system/azurednssync.timer`.
+- **Check service status or logs:**
+  ```bash
+  sudo systemctl status azurednssync.timer
+  sudo journalctl -u azurednssync.service
+  ```
+
+---
+
+## 🔬 How It Works
+
+1. Detects your **current public IP** (via [ipify.org](https://www.ipify.org/))
+2. Checks your **Azure DNS A record**
+3. If your IP has changed, updates your DNS and **sends you an email notification**
+4. Logs all actions to `/etc/azurednssync/update.log` (last 7 days kept)
+
+---
+
+## 💡 Example config.yaml
+
+```yaml
+tenant_id: "11016236-4dbc-43a6-8310-be803173fc43"
+client_id: "ad2c13fe-115e-410d-a3bb-9ad80725fd7f"
+subscription_id: "13869b4a-7bd0-4f35-a796-3ea82f39c884"
+certificate_path: "/etc/ssl/private/dnssync-combined.pem"
+resource_group: "DNS_Zones"
+zone_name: "andykemp.cloud"
+record_set_name: "ip"
+ttl: 300
+email_from: "AzureDNSSync@andykemp.cloud"
+email_to: "andrew@kemponline.co.uk"
+smtp_server: "mail.smtp2go.com"
+smtp_port: 587
+certificate_password: ""
 ```
-
-- Enter your Azure IDs, resource group, zone, record, and SMTP config (if you want notifications).
-- The script will set up a cron job for periodic updates.
+(SMTP username/password are stored separately in `/etc/azurednssync/smtp_auth.key`, permissions 600.)
 
 ---
 
-## 5. AzureDNSSync Operation
+## ❓ FAQ
 
-- The updater runs via cron as configured (default: every 5 minutes).
-- It checks your public IP, updates the Azure DNS A record if it changes, and sends an email notification if configured.
-- Logs are stored in `/etc/azurednssync/update.log`
+**Q: Will this overwrite my DNS record every time?**  
+A: No! It only updates if your public IP changes.
 
----
+**Q: Can I run this on other Linux distros?**  
+A: It’s designed for Ubuntu, but should work on any systemd-based distro with minor tweaks.
 
-## Security Notes
+**Q: Is my password visible when I enter it?**  
+A: Nope, password prompts are fully hidden (no echo).
 
-- Private key, certificate, and config are stored in `/etc/ssl/private` and `/etc/azurednssync` with restrictive permissions.
-- Do **not** share your private key or combined PEM.
-- Only the **public certificate** block is used for Azure App Registration.
+**Q: Where does the installer put everything?**  
+A: `/etc/azurednssync` for config/code/venv, `/etc/ssl/private` for certs, and systemd units.
 
----
-
-## Troubleshooting
-
-- If you get `ModuleNotFoundError`, ensure install.sh completed successfully.
-- Check logs in `/etc/azurednssync/update.log`
-- To re-run configuration:  
-  `sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py`
-- To re-install: re-run the quick install command above.
+**Q: Where can I get help?**  
+A: [Open an issue](https://github.com/andrew-kemp/AzureDNSSync/issues) or ping [@andrew-kemp](https://github.com/andrew-kemp)!
 
 ---
 
-## Uninstall
-
-```bash
-sudo crontab -e  # Remove the AzureDNSSync cron job
-sudo rm -rf /etc/azurednssync/
-sudo rm /etc/ssl/private/dnssync.key /etc/ssl/private/dnssync.crt /etc/ssl/private/dnssync-combined.pem
-```
-
----
-
-## License
+## 📝 License
 
 MIT
+
+---
+
+## 🙏 Credits
+
+Inspired by DynDNS, DuckDNS, and Azure’s own samples.  
+Big thanks to the open source community!  
