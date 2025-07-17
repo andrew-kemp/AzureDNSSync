@@ -85,6 +85,13 @@ echo
 sudo awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/ {print}' "$CERT_DIR/${CERT_NAME}.crt"
 echo
 
+# --- NEW: Prompt to continue after copying the certificate block ---
+if [ -t 1 ]; then
+    echo
+    read -rsp "Press Enter to continue once you have copied the certificate block to Azure..." dummy
+    echo
+fi
+
 # 8. Initial configuration wizard (optional) and cron job setup
 VENV_PY="$VENV_DIR/bin/python"
 CRON_LINE="*/5 * * * * $VENV_PY $INSTALL_DIR/$SCRIPT_NAME > /dev/null 2>&1"
@@ -94,7 +101,7 @@ if [ -t 1 ]; then
         echo
         read -rp "Would you like to run the AzureDNSSync configuration wizard now? [Y/n]: " RUNCONF
         case "$RUNCONF" in
-            [Yy]*|"") # Default to yes on empty
+            [Yy]*|"")
                 echo_title "Starting AzureDNSSync configuration wizard..."
                 sudo "$VENV_PY" "$INSTALL_DIR/$SCRIPT_NAME"
                 break
