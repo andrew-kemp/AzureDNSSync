@@ -9,7 +9,7 @@ Last Updated: 2025-07-17
 Synopsis:
     This script checks your public IP address and updates an Azure DNS A record if it has changed.
     Designed to be run via systemd timer or manually; no internal scheduling logic.
-    Configuration is read from config.yaml and smtp_auth.key, created by install.sh.
+    Configuration is read from config.yaml and smtp_auth.key, created by install.sh or via --reconfig.
 
 Manual Run:
     sudo /etc/azurednssync/venv/bin/python /etc/azurednssync/azurednssync.py
@@ -41,6 +41,7 @@ import argparse
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.text import MIMEText
+import getpass
 
 try:
     from azure.identity import CertificateCredential
@@ -96,7 +97,7 @@ def log_update(message):
 def prompt_and_store_smtp_key(keyfile_path, defaults):
     print("\n--- SMTP Credentials ---\n")
     smtp_username = input(f"SMTP Username [{defaults.get('smtp_username', 'apikey')}]: ").strip() or defaults.get('smtp_username', 'apikey')
-    smtp_password = input(f"SMTP API Key or password: ").strip()
+    smtp_password = getpass.getpass("SMTP API Key or password: ")
     with open(keyfile_path, "w") as kf:
         kf.write(f"username:{smtp_username}\npassword:{smtp_password}\n")
     os.chmod(keyfile_path, 0o600)
@@ -107,17 +108,18 @@ def is_interactive():
 
 def prompt_config(defaults):
     print("\n--- Azure DNS Dynamic Updater Initial Configuration ---\n")
-    config = {}
 
-    print("\nAzure Configuration:")
+    print("Azure Configuration:")
+    config = {}
     config['tenant_id'] = input(f"Tenant ID [{defaults['tenant_id']}]: ").strip() or defaults['tenant_id']
     config['client_id'] = input(f"Application ID [{defaults['client_id']}]: ").strip() or defaults['client_id']
     config['subscription_id'] = input(f"Subscription ID [{defaults['subscription_id']}]: ").strip() or defaults['subscription_id']
-    config['certificate_path'] = defaults['certificate_path']
     config['resource_group'] = input(f"Resource Group [{defaults['resource_group']}]: ").strip() or defaults['resource_group']
     config['zone_name'] = input(f"Zone Name [{defaults['zone_name']}]: ").strip() or defaults['zone_name']
     config['record_set_name'] = input(f"Record Set Name [{defaults['record_set_name']}]: ").strip() or defaults['record_set_name']
     config['ttl'] = int(input(f"TTL [{defaults['ttl']}]: ").strip() or defaults['ttl'])
+    config['certificate_path'] = input(f"Path to Azure app certificate [{defaults['certificate_path']}]: ").strip() or defaults['certificate_path']
+    config["certificate_password"] = getpass.getpass("Certificate password (if any, else leave blank): ")
 
     print("\nEmail/SMTP Configuration:")
     config['email_from'] = input(f"Email Address From [{defaults['email_from']}]: ").strip() or defaults['email_from']
@@ -127,7 +129,6 @@ def prompt_config(defaults):
 
     prompt_and_store_smtp_key(SMTP_KEY_FILE, defaults)
 
-    config["certificate_password"] = defaults["certificate_password"]
     return config
 
 def read_smtp_key(keyfile_path):
