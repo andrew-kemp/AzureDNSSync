@@ -34,8 +34,8 @@ DEFAULTS = {
     "email_to": "admin@example.com",
     "smtp_server": "smtp.example.com",
     "smtp_port": 587,
-    "smtp_username": "apikey",
-    "smtp_password": "SG.xxxxxxxx.yyyyyyyyzzzzzzzz",  # Example API key
+    "smtp_username": "apikey",  # or your_smtp2go_username
+    # "smtp_password": "SG.xxxxxxxx.yyyyyyyyzzzzzzzz",  # <-- REMOVED! Now only in smtp_auth.key
     "schedule_minutes": 5,
     "scheduled": True,
     "subscription_id": "abcdef12-3456-7890-abcd-ef1234567890", # Example GUID
@@ -64,7 +64,7 @@ def log_update(message):
 def prompt_and_store_smtp_key(keyfile_path, defaults):
     print("\n--- SMTP Credentials ---\n")
     smtp_username = input(f"SMTP Username [{defaults.get('smtp_username', 'apikey')}]: ").strip() or defaults.get('smtp_username', 'apikey')
-    smtp_password = input(f"SMTP API Key or password [{defaults.get('smtp_password', '')}]: ").strip() or defaults.get('smtp_password', '')
+    smtp_password = input(f"SMTP API Key or password: ").strip()
     with open(keyfile_path, "w") as kf:
         kf.write(f"username:{smtp_username}\npassword:{smtp_password}\n")
     os.chmod(keyfile_path, 0o600)
@@ -95,6 +95,7 @@ def prompt_config(defaults):
     config['email_to'] = input(f"Email Address To [{defaults['email_to']}]: ").strip() or defaults['email_to']
     config['smtp_server'] = input(f"SMTP Server [{defaults['smtp_server']}]: ").strip() or defaults['smtp_server']
     config['smtp_port'] = int(input(f"SMTP Port [{defaults['smtp_port']}]: ").strip() or defaults['smtp_port'])
+    config['smtp_username'] = input(f"SMTP Username [{defaults.get('smtp_username','apikey')}]: ").strip() or defaults.get('smtp_username','apikey')
 
     # SMTP CREDENTIALS SECTION
     prompt_and_store_smtp_key(SMTP_KEY_FILE, defaults)
